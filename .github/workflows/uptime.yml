@@ -28,6 +28,11 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch: # manual test runs
+    inputs:
+      test_sms:
+        description: "Also send a test SMS to every alert number (uses one BulkSMS send per number)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -82,6 +87,17 @@ jobs:
           UPTIME_STATE_FILE: .uptime-jobs-state.json
           UPTIME_CHECK_NAME: jobs
         run: python uptime_check.py
+
+      # Manual runs only, and only when the box is ticked. Proves the SMS
+      # credentials and the numbers work without waiting for an outage. The
+      # run goes red unless BulkSMS accepts a message for every number.
+      - name: Send a test SMS
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.test_sms
+        env:
+          BULKSMS_TOKEN_ID: ${{ secrets.BULKSMS_TOKEN_ID }}
+          BULKSMS_TOKEN_SECRET: ${{ secrets.BULKSMS_TOKEN_SECRET }}
+          UPTIME_ALERT_PHONES: ${{ secrets.UPTIME_ALERT_PHONES }}
+        run: python test_sms.py
 
       - name: Save flap-control state
         if: always()

@@ -11,6 +11,10 @@ texts the people on call when it is not.
   GitHub switches off scheduled workflows in a public repository that has had
   no activity for 60 days.
 
+To prove a text really arrives: Actions > Uptime > Run workflow, tick "Also
+send a test SMS", and run. The run goes red unless BulkSMS accepts a message
+for every number.
+
 The SMS credentials and the phone numbers are repository secrets. Nothing
 private is in this repository or in its run logs; phone numbers are logged by
 their last three digits only.
