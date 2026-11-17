@@ -1,0 +1,27 @@
+# GitHub switches off scheduled workflows in a public repository after 60 days
+# without repository activity. That would stop the uptime check without a
+# word. This makes one empty commit a month so it never happens.
+
+name: Keepalive
+
+on:
+  schedule:
+    - cron: "23 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  commit:
+    if: github.repository == 'iSpani-Africa/uptime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Empty commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive: keep the scheduled uptime check enabled"
+          git push

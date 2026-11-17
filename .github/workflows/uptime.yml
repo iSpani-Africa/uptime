@@ -1,0 +1,93 @@
+# External uptime watcher for ispani.africa.
+#
+# Pings the site's health endpoints from GitHub's runners, independent of the
+# server, so a full outage is still detected. Alerts go by SMS straight to the
+# BulkSMS API (never through the app: the app may be down).
+#
+# Required secrets (Settings -> Secrets and variables -> Actions):
+#   BULKSMS_TOKEN_ID
+#   BULKSMS_TOKEN_SECRET
+#   UPTIME_ALERT_PHONES    comma-separated E.164 numbers
+# Optional:
+#   HEALTHZ_URL            defaults to https://ispani.africa/healthz
+#   HEALTHZ_JOBS_URL       defaults to https://ispani.africa/healthz/jobs
+#
+# Without the BulkSMS secrets the check still runs, but it only prints the
+# alert in the log and texts nobody.
+#
+# Flap control lives in uptime_check.py; its state persists between runs via
+# the Actions cache. Two consecutive failed runs -> one DOWN SMS; the first
+# green run after that -> one RECOVERED SMS. A down site also shows as a red
+# run.
+#
+# GitHub's cron is best-effort and can run late.
+
+name: Uptime
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # manual test runs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # Not on forks: no secrets there.
+    if: github.repository == 'iSpani-Africa/uptime'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Restore flap-control state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .uptime-state.json
+            .uptime-jobs-state.json
+          key: uptime-state-${{ github.run_id }}
+          restore-keys: uptime-state-
+
+      - name: Check /healthz
+        env:
+          HEALTHZ_URL: ${{ secrets.HEALTHZ_URL || 'https://ispani.africa/healthz' }}
+          BULKSMS_TOKEN_ID: ${{ secrets.BULKSMS_TOKEN_ID }}
+          BULKSMS_TOKEN_SECRET: ${{ secrets.BULKSMS_TOKEN_SECRET }}
+          UPTIME_ALERT_PHONES: ${{ secrets.UPTIME_ALERT_PHONES }}
+        run: python uptime_check.py
+
+      # Are the background jobs still running? The site can answer /healthz
+      # with its scheduler dead. Runs even when the step above failed.
+      - name: Check /healthz/jobs
+        if: always()
+        env:
+          HEALTHZ_URL: ${{ secrets.HEALTHZ_JOBS_URL || 'https://ispani.africa/healthz/jobs' }}
+          BULKSMS_TOKEN_ID: ${{ secrets.BULKSMS_TOKEN_ID }}
+          BULKSMS_TOKEN_SECRET: ${{ secrets.BULKSMS_TOKEN_SECRET }}
+          UPTIME_ALERT_PHONES: ${{ secrets.UPTIME_ALERT_PHONES }}
+          UPTIME_STATE_FILE: .uptime-jobs-state.json
+          UPTIME_CHECK_NAME: jobs
+        run: python uptime_check.py
+
+      - name: Save flap-control state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .uptime-state.json
+            .uptime-jobs-state.json
+          key: uptime-state-${{ github.run_id }}
